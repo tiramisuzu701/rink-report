@@ -84,6 +84,8 @@
   .card-head{display:flex; align-items:center; justify-content:space-between; padding:14px 18px; border-bottom:1px solid var(--line);}
   .card-head h2{font-size:14px; letter-spacing:.04em;}
   .card-head .link-more{font-family:var(--font-body); font-size:12.5px; font-weight:600; color:var(--blue); text-decoration:none; cursor:pointer; text-transform:none;}
+  .roster-group-label{padding:12px 18px 2px; font-family:var(--font-display); font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-soft); font-weight:600;}
+  .roster-group-label:first-child{padding-top:14px;}
 
   .grid-2{display:grid; grid-template-columns:1.3fr 1fr; gap:18px;}
   @media (max-width:860px){ .grid-2{grid-template-columns:1fr;} }

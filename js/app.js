@@ -505,6 +505,11 @@ function renderHome(){
   );
 }
 function posLabel(p){ return p==='G'?'Goalie':(p==='D'?'Defense':'Forward'); }
+var POSITION_ORDER = {F:0, D:1, G:2};
+function positionRank(p){ return POSITION_ORDER[p.position]!=null ? POSITION_ORDER[p.position] : 0; }
+function byPositionThenName(a,b){
+  return positionRank(a)-positionRank(b) || a.name.localeCompare(b.name);
+}
 
 /* ================= PAGE: STANDINGS ================= */
 var standingsView = 'league'; // 'league' | 'division'
@@ -624,28 +629,47 @@ function renderTeam(teamId){
 }
 
 /* ================= PAGE: PLAYERS ================= */
+function skaterRowsHTML(skaters, pstats, teamId){
+  return skaters.map(function(p){
+    var s = pstats[p.id] || {gp:0,goals:0,assists:0,points:0};
+    return '<tr class="clickable" onclick="location.hash=\'#/team/' + teamId + '\'"><td>' + esc(p.name) + '</td><td>' + posLabel(p.position) + '</td>' +
+      '<td class="tnum">' + s.gp + '</td><td class="tnum">' + s.goals + '</td><td class="tnum">' + s.assists + '</td><td class="pts"><strong>' + s.points + '</strong></td></tr>';
+  }).join('');
+}
+function goalieRowsHTML(goalies, pstats, teamId){
+  return goalies.map(function(p){
+    var s = pstats[p.id] || {goalieGp:0,ga:0,gaa:0};
+    return '<tr class="clickable" onclick="location.hash=\'#/team/' + teamId + '\'"><td>' + esc(p.name) + '</td>' +
+      '<td class="tnum">' + s.goalieGp + '</td><td class="tnum">' + s.ga + '</td><td class="tnum">' + s.gaa.toFixed(2) + '</td></tr>';
+  }).join('');
+}
 function renderPlayers(){
   var season = getCurrentSeason();
   var pstats = computePlayerStats(season.id);
   var teams = activeTeams().slice().sort(function(a,b){return a.name.localeCompare(b.name);});
   if(!teams.length) return pageHead('Rosters & Stats', 'Players') + '<div class="card">' + emptyState('No teams yet', 'Add teams and players from Management.') + '</div>';
   var body = teams.map(function(t){
-    var roster = teamPlayers(t.id).slice().sort(function(a,b){
-      var sa = pstats[a.id]||{points:0}, sb = pstats[b.id]||{points:0};
-      return (sb.points||0)-(sa.points||0) || a.name.localeCompare(b.name);
+    var roster = teamPlayers(t.id);
+    var skaters = roster.filter(function(p){return p.position!=='G';}).sort(function(a,b){
+      return positionRank(a)-positionRank(b) || ((pstats[b.id]||{}).points||0)-((pstats[a.id]||{}).points||0) || a.name.localeCompare(b.name);
     });
-    var rowsHTML = roster.length ? roster.map(function(p){
-      var s = pstats[p.id] || {gp:0,goals:0,assists:0,points:0,ga:0,goalieGp:0,gaa:0};
-      if(p.position==='G'){
-        return '<tr class="clickable" onclick="location.hash=\'#/team/' + t.id + '\'"><td>' + esc(p.name) + '</td><td>Goalie</td>' +
-          '<td class="tnum">' + s.goalieGp + '</td><td class="tnum">&mdash;</td><td class="tnum">&mdash;</td><td class="tnum">&mdash;</td><td class="tnum">' + s.ga + '</td><td class="tnum">' + s.gaa.toFixed(2) + '</td></tr>';
-      }
-      return '<tr class="clickable" onclick="location.hash=\'#/team/' + t.id + '\'"><td>' + esc(p.name) + '</td><td>' + posLabel(p.position) + '</td>' +
-        '<td class="tnum">' + s.gp + '</td><td class="tnum">' + s.goals + '</td><td class="tnum">' + s.assists + '</td><td class="pts"><strong>' + s.points + '</strong></td><td class="tnum">&mdash;</td><td class="tnum">&mdash;</td></tr>';
-    }).join('') : '<tr><td colspan="8" class="subtle" style="text-align:left">No players on this roster yet.</td></tr>';
+    var goalies = roster.filter(function(p){return p.position==='G';}).sort(function(a,b){
+      var sa = pstats[a.id]||{goalieGp:0,gaa:0}, sb = pstats[b.id]||{goalieGp:0,gaa:0};
+      var aPlayed = sa.goalieGp>0, bPlayed = sb.goalieGp>0;
+      if(aPlayed!==bPlayed) return aPlayed?-1:1;
+      if(aPlayed && bPlayed && sa.gaa!==sb.gaa) return sa.gaa-sb.gaa;
+      return a.name.localeCompare(b.name);
+    });
+    var skaterTable = skaters.length ?
+      '<div class="roster-group-label">Skaters</div><div class="table-wrap"><table><thead><tr><th>Player</th><th>Pos</th><th>GP</th><th>G</th><th>A</th><th>PTS</th></tr></thead><tbody>' +
+      skaterRowsHTML(skaters, pstats, t.id) + '</tbody></table></div>' : '';
+    var goalieTable = goalies.length ?
+      '<div class="roster-group-label">Goalies</div><div class="table-wrap"><table><thead><tr><th>Player</th><th>GP</th><th>GA</th><th>GAA</th></tr></thead><tbody>' +
+      goalieRowsHTML(goalies, pstats, t.id) + '</tbody></table></div>' : '';
+    var content = (skaterTable + goalieTable) || emptyState('No players on this roster yet.', '');
     return '<div class="card" style="margin-bottom:16px">' +
       '<div class="card-head"><h2 style="display:flex;align-items:center;gap:8px">' + teamBadgeHTML(t,'sm') + esc(t.name) + '</h2></div>' +
-      '<div class="table-wrap"><table><thead><tr><th>Player</th><th>Pos</th><th>GP</th><th>G</th><th>A</th><th>PTS</th><th>GA</th><th>GAA</th></tr></thead><tbody>' + rowsHTML + '</tbody></table></div>' +
+      content +
     '</div>';
   }).join('');
   return pageHead('Rosters & Stats', 'Players') + body;
@@ -990,19 +1014,23 @@ function mgPlayersHTML(){
     '<div class="form-actions"><button class="btn primary" type="submit">Add players</button></div>' +
   '</form>';
   var formHTML = mode==='bulk' ? bulkFormHTML : singleFormHTML;
+  function mgPlayerRowHTML(p){
+    var gp = STATE.gamePlayerStats.filter(function(gs){return gs.playerId===p.id;}).length;
+    return '<div class="list-row"><div style="flex:1">' + esc(p.name) + (p.jersey?' <span class="subtle tnum">#' + esc(p.jersey) + '</span>':'') + ' <span class="subtle">' + posLabel(p.position) + '</span>' + (p.active===false?' <span class="chip general">Inactive</span>':'') + '</div>' +
+      '<div class="form-actions">' +
+        '<button class="btn sm" data-action="edit-player" data-id="' + p.id + '">Edit</button>' +
+        (p.active===false ? '<button class="btn sm" data-action="reactivate-player" data-id="' + p.id + '">Reactivate</button>' : '<button class="btn sm" data-action="deactivate-player" data-id="' + p.id + '">Deactivate</button>') +
+        (gp===0 ? '<button class="btn sm danger" data-action="delete-player" data-id="' + p.id + '">Delete</button>' : '') +
+      '</div></div>';
+  }
   var body = teams.map(function(t){
-    var roster = teamPlayers(t.id, true).slice().sort(function(a,b){return a.name.localeCompare(b.name);});
+    var roster = teamPlayers(t.id, true);
     if(!roster.length) return '';
+    var skaters = roster.filter(function(p){return p.position!=='G';}).sort(byPositionThenName);
+    var goalies = roster.filter(function(p){return p.position==='G';}).sort(function(a,b){return a.name.localeCompare(b.name);});
     return '<div class="card" style="margin-bottom:14px"><div class="card-head"><h2 style="display:flex;gap:8px;align-items:center">' + teamBadgeHTML(t,'sm') + esc(t.name) + '</h2></div>' +
-      roster.map(function(p){
-        var gp = STATE.gamePlayerStats.filter(function(gs){return gs.playerId===p.id;}).length;
-        return '<div class="list-row"><div style="flex:1">' + esc(p.name) + (p.jersey?' <span class="subtle tnum">#' + esc(p.jersey) + '</span>':'') + ' <span class="subtle">' + posLabel(p.position) + '</span>' + (p.active===false?' <span class="chip general">Inactive</span>':'') + '</div>' +
-          '<div class="form-actions">' +
-            '<button class="btn sm" data-action="edit-player" data-id="' + p.id + '">Edit</button>' +
-            (p.active===false ? '<button class="btn sm" data-action="reactivate-player" data-id="' + p.id + '">Reactivate</button>' : '<button class="btn sm" data-action="deactivate-player" data-id="' + p.id + '">Deactivate</button>') +
-            (gp===0 ? '<button class="btn sm danger" data-action="delete-player" data-id="' + p.id + '">Delete</button>' : '') +
-          '</div></div>';
-      }).join('') +
+      (skaters.length ? '<div class="roster-group-label">Skaters</div>' + skaters.map(mgPlayerRowHTML).join('') : '') +
+      (goalies.length ? '<div class="roster-group-label">Goalies</div>' + goalies.map(mgPlayerRowHTML).join('') : '') +
     '</div>';
   }).join('');
   return modeToggle + formHTML + (body || emptyState('No players yet', 'Add your first player above.'));

@@ -110,6 +110,15 @@ added (as a forward, with no jersey number). Every player on the list joins
 the team picked at the top of the form; to add rosters for multiple teams,
 run it once per team.
 
+## Roster ordering
+
+Both the public Players page and the Management → Players roster lists
+group each team's roster into **Skaters** and **Goalies**, sorted by
+position (forwards, then defense, then goalies) rather than alphabetically.
+On the public page, skaters break ties by points and goalies by GAA
+(games-played goalies first); in Management, ties break alphabetically by
+name.
+
 ## Notes
 
 - **Points system, team colors, and league name** are all editable from the
