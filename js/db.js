@@ -113,6 +113,12 @@
     },
     async setPlayerActive(id, active) { check(await sb.from("players").update({ active: active }).eq("id", id)); },
     async deletePlayer(id) { check(await sb.from("players").delete().eq("id", id)); },
+    async bulkAddPlayers(rows) {
+      var payload = rows.map(function (p) {
+        return { team_id: p.teamId, name: p.name, position: p.position || "F", jersey: p.jersey };
+      });
+      check(await sb.from("players").insert(payload));
+    },
 
     async deleteNews(id) { check(await sb.from("news").delete().eq("id", id)); },
     async postNews(n) { check(await sb.from("news").insert({ type: n.type, title: n.title, body: n.body, date: n.date })); },

@@ -938,11 +938,38 @@ function mgDivisionsHTML(){
   return formHTML + '<div class="card">' + (rows || emptyState('No divisions yet', 'Add a division above, then assign teams to it from the Teams tab.')) + '</div>';
 }
 
+/* ---------- bulk-add player parsing ---------- */
+function parseBulkPlayerLine(line){
+  var parts = line.split(',').map(function(s){return s.trim();}).filter(Boolean);
+  if(!parts.length) return null;
+  var name = parts[0];
+  var jersey = null, position = null;
+  for(var i=1;i<parts.length;i++){
+    var tok = parts[i], up = tok.toUpperCase();
+    if(/^\d+$/.test(tok)) jersey = parseInt(tok,10);
+    else if(up==='F'||up==='FORWARD') position='F';
+    else if(up==='D'||up==='DEFENSE'||up==='DEFENCE') position='D';
+    else if(up==='G'||up==='GOALIE'||up==='GOALTENDER') position='G';
+  }
+  return { name:name, jersey:jersey, position: position || 'F' };
+}
+function parseBulkPlayersText(text){
+  return (text||'').split(/\r?\n/).map(parseBulkPlayerLine).filter(Boolean);
+}
+
+var mgPlayerAddMode = 'single';
 function mgPlayersHTML(){
   if(!STATE.teams.length) return emptyState('Add a team first', 'Players need a team to belong to.');
   var editing = mgEditPlayerId ? playerById(mgEditPlayerId) : null;
   var teams = STATE.teams.slice().sort(function(a,b){return a.name.localeCompare(b.name);});
-  var formHTML = '<form data-form="savePlayer" class="card card-pad stack" style="max-width:580px;margin-bottom:18px">' +
+  var mode = editing ? 'single' : mgPlayerAddMode;
+  var modeToggle = editing ? '' : (
+    '<div class="tabbar" style="margin-bottom:14px">' +
+      '<button class="tab-btn ' + (mode==='single'?'active':'') + '" data-mgplayeraddmode="single">Add One</button>' +
+      '<button class="tab-btn ' + (mode==='bulk'?'active':'') + '" data-mgplayeraddmode="bulk">Bulk Add</button>' +
+    '</div>'
+  );
+  var singleFormHTML = '<form data-form="savePlayer" class="card card-pad stack" style="max-width:580px;margin-bottom:18px">' +
     '<div class="eyebrow">' + (editing?'Edit Player':'Add Player') + '</div>' +
     (editing?'<input type="hidden" name="id" value="' + editing.id + '">':'') +
     '<div class="field-row">' +
@@ -955,6 +982,14 @@ function mgPlayersHTML(){
     '</div>' +
     '<div class="form-actions"><button class="btn primary" type="submit">' + (editing?'Save changes':'Add player') + '</button>' + (editing?'<button type="button" class="btn" data-action="cancel-edit-player">Cancel</button>':'') + '</div>' +
   '</form>';
+  var bulkFormHTML = '<form data-form="bulkAddPlayers" class="card card-pad stack" style="max-width:580px;margin-bottom:18px">' +
+    '<div class="eyebrow">Bulk Add Players</div>' +
+    '<div class="field"><label>Team</label><select name="teamId" required>' + teams.map(function(t){return '<option value="' + t.id + '">' + esc(t.name) + '</option>';}).join('') + '</select></div>' +
+    '<div class="field"><label>Players</label><textarea name="players" rows="8" placeholder="One player per line:&#10;Sam Carter, 9, F&#10;Jamie Lee, 30, G&#10;Alex Rivera"></textarea></div>' +
+    '<p class="subtle" style="font-size:12px;margin:0">One player per line. After the name, add a jersey number and/or position (F/D/G) separated by commas, in any order — both are optional. Every player on the list joins the team selected above.</p>' +
+    '<div class="form-actions"><button class="btn primary" type="submit">Add players</button></div>' +
+  '</form>';
+  var formHTML = mode==='bulk' ? bulkFormHTML : singleFormHTML;
   var body = teams.map(function(t){
     var roster = teamPlayers(t.id, true).slice().sort(function(a,b){return a.name.localeCompare(b.name);});
     if(!roster.length) return '';
@@ -970,7 +1005,7 @@ function mgPlayersHTML(){
       }).join('') +
     '</div>';
   }).join('');
-  return formHTML + (body || emptyState('No players yet', 'Add your first player above.'));
+  return modeToggle + formHTML + (body || emptyState('No players yet', 'Add your first player above.'));
 }
 
 function mgTradesHTML(){
@@ -1146,6 +1181,8 @@ function onClick(e) {
   if (lgm) { lgDraft.mode = lgm.dataset.lgmode; paint(); return; }
   var sv = e.target.closest("[data-standingsview]");
   if (sv) { standingsView = sv.dataset.standingsview; paint(); return; }
+  var pam = e.target.closest("[data-mgplayeraddmode]");
+  if (pam) { mgPlayerAddMode = pam.dataset.mgplayeraddmode; paint(); return; }
   var mgt = e.target.closest("[data-mgtab]");
   if (mgt) { mgTab = mgt.dataset.mgtab; mgEditTeamId = null; mgEditPlayerId = null; mgEditDivisionId = null; paint(); return; }
   var rt = e.target.closest(".tabbar [data-tab]");
@@ -1296,6 +1333,15 @@ async function onSubmit(e) {
     };
     var ok2 = await withSave(function () { return DB.savePlayer(player); }, player.id ? "Player updated." : "Player added.");
     if (ok2) mgEditPlayerId = null;
+  } else if (kind === "bulkAddPlayers") {
+    var bulkTeamId = fd.get("teamId");
+    if (!bulkTeamId) { toast("Choose a team.", true); return; }
+    var parsedPlayers = parseBulkPlayersText((fd.get("players") || "") + "");
+    if (!parsedPlayers.length) { toast("Paste at least one player, one per line.", true); return; }
+    var bulkTeam = teamById(bulkTeamId);
+    if (!confirm("Add " + parsedPlayers.length + " player" + (parsedPlayers.length === 1 ? "" : "s") + " to " + (bulkTeam ? bulkTeam.name : "this team") + "?")) return;
+    var bulkRows = parsedPlayers.map(function (p) { return { teamId: bulkTeamId, name: p.name, position: p.position, jersey: p.jersey }; });
+    await withSave(function () { return DB.bulkAddPlayers(bulkRows); }, "Added " + bulkRows.length + " player" + (bulkRows.length === 1 ? "" : "s") + ".");
   } else if (kind === "logTrade") {
     var moves = tradeDraft.moves.filter(function (m) { return m.playerId && m.toTeamId; });
     if (!moves.length) { toast("Add at least one player move.", true); return; }

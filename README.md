@@ -90,6 +90,26 @@ cutoff rank (if that division has one set) marking who's in playoff
 position; teams with no division land in a final "Unassigned" table. Full
 League view is the original single combined table, unchanged.
 
+## Bulk-adding players
+
+From Management → Players, switch to the **Bulk Add** tab (next to
+**Add One**), pick a team, and paste a whole roster into the text box — one
+player per line. Each line is just the name, optionally followed by a
+jersey number and/or position (`F`, `D`, or `G`), separated by commas in
+any order:
+
+```
+Sam Carter, 9, F
+Jamie Lee, 30, G
+Alex Rivera
+Drew Park, G, 1
+```
+
+Jersey number and position are both optional — a bare name still gets
+added (as a forward, with no jersey number). Every player on the list joins
+the team picked at the top of the form; to add rosters for multiple teams,
+run it once per team.
+
 ## Notes
 
 - **Points system, team colors, and league name** are all editable from the
