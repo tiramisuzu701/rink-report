@@ -61,6 +61,8 @@ function playerById(id){ return STATE.players.filter(function(p){return p.id===i
 function activeTeams(){ return STATE.teams.filter(function(t){return t.active!==false;}); }
 function teamPlayers(teamId, includeInactive){ return STATE.players.filter(function(p){return p.teamId===teamId && (includeInactive || p.active!==false);}); }
 function gameById(id){ return STATE.games.filter(function(g){return g.id===id;})[0]; }
+function divisionById(id){ return (STATE.divisions||[]).filter(function(d){return d.id===id;})[0]; }
+function sortedDivisions(){ return (STATE.divisions||[]).slice().sort(function(a,b){return a.name.localeCompare(b.name);}); }
 
 /* ---------- compute: standings ---------- */
 function computeStandings(seasonId){
@@ -505,33 +507,66 @@ function renderHome(){
 function posLabel(p){ return p==='G'?'Goalie':(p==='D'?'Defense':'Forward'); }
 
 /* ================= PAGE: STANDINGS ================= */
+var standingsView = 'league'; // 'league' | 'division'
+function standingsRowHTML(r, rank){
+  return '<tr class="clickable" onclick="location.hash=\'#/team/' + r.team.id + '\'">' +
+    '<td class="rank">' + rank + '</td>' +
+    '<td>' + teamLinkHTML(r.team) + '</td>' +
+    '<td class="tnum">' + r.gp + '</td>' +
+    '<td class="tnum">' + r.w + '</td>' +
+    '<td class="tnum">' + r.l + '</td>' +
+    '<td class="tnum">' + r.otl + '</td>' +
+    '<td class="pts"><strong>' + r.pts + '</strong></td>' +
+    '<td class="tnum">' + pct(r.ptsPct) + '</td>' +
+    '<td class="tnum">' + r.gf + '</td>' +
+    '<td class="tnum">' + r.ga + '</td>' +
+    '<td class="tnum ' + (r.diff>0?'diff-pos':r.diff<0?'diff-neg':'') + '">' + (r.diff>0?'+':'') + r.diff + '</td>' +
+    '<td class="tnum">' + r.hw + '-' + r.hl + '-' + r.hotl + '</td>' +
+    '<td class="tnum">' + r.aw + '-' + r.al + '-' + r.aotl + '</td>' +
+  '</tr>';
+}
+function cutoffRowHTML(cutoff, total){
+  return '<tr class="cutoff-row"><td colspan="13"><span>Playoff Cutoff &middot; top ' + cutoff + ' of ' + total + ' advance</span></td></tr>';
+}
+function standingsTableHTML(rows, cutoff){
+  var body = rows.map(function(r,i){
+    var html = standingsRowHTML(r, i+1);
+    if(cutoff && cutoff>0 && cutoff<rows.length && (i+1)===cutoff) html += cutoffRowHTML(cutoff, rows.length);
+    return html;
+  }).join('');
+  return '<div class="table-wrap"><table><thead><tr>' +
+    '<th></th><th>Team</th><th>GP</th><th>W</th><th>L</th><th>OTL</th><th>PTS</th><th>PTS%</th><th>GF</th><th>GA</th><th>DIFF</th><th>Home</th><th>Away</th>' +
+    '</tr></thead><tbody>' + body + '</tbody></table></div>';
+}
 function renderStandings(){
   var season = getCurrentSeason();
   var rows = computeStandings(season.id);
   if(!rows.length){
     return pageHead('Season Standings', season.name) + '<div class="card">' + emptyState('No teams yet', 'Add teams from the Management tab to get started.') + '</div>';
   }
-  var body = '<div class="table-wrap"><table><thead><tr>' +
-    '<th></th><th>Team</th><th>GP</th><th>W</th><th>L</th><th>OTL</th><th>PTS</th><th>PTS%</th><th>GF</th><th>GA</th><th>DIFF</th><th>Home</th><th>Away</th>' +
-    '</tr></thead><tbody>' +
-    rows.map(function(r,i){
-      return '<tr class="clickable" onclick="location.hash=\'#/team/' + r.team.id + '\'">' +
-        '<td class="rank">' + (i+1) + '</td>' +
-        '<td>' + teamLinkHTML(r.team) + '</td>' +
-        '<td class="tnum">' + r.gp + '</td>' +
-        '<td class="tnum">' + r.w + '</td>' +
-        '<td class="tnum">' + r.l + '</td>' +
-        '<td class="tnum">' + r.otl + '</td>' +
-        '<td class="pts"><strong>' + r.pts + '</strong></td>' +
-        '<td class="tnum">' + pct(r.ptsPct) + '</td>' +
-        '<td class="tnum">' + r.gf + '</td>' +
-        '<td class="tnum">' + r.ga + '</td>' +
-        '<td class="tnum ' + (r.diff>0?'diff-pos':r.diff<0?'diff-neg':'') + '">' + (r.diff>0?'+':'') + r.diff + '</td>' +
-        '<td class="tnum">' + r.hw + '-' + r.hl + '-' + r.hotl + '</td>' +
-        '<td class="tnum">' + r.aw + '-' + r.al + '-' + r.aotl + '</td>' +
-      '</tr>';
-    }).join('') + '</tbody></table></div>';
-  return pageHead('Season Standings', season.name) + '<div class="card">' + body + '</div>' +
+  var divisions = sortedDivisions();
+  var viewToggle = divisions.length ? (
+    '<div class="tabbar">' +
+      '<button class="tab-btn ' + (standingsView==='league'?'active':'') + '" data-standingsview="league">Full League</button>' +
+      '<button class="tab-btn ' + (standingsView==='division'?'active':'') + '" data-standingsview="division">Divisional</button>' +
+    '</div>'
+  ) : '';
+  var body;
+  if(divisions.length && standingsView==='division'){
+    var groups = divisions.map(function(d){
+      var dRows = rows.filter(function(r){ return r.team.divisionId===d.id; });
+      if(!dRows.length) return '';
+      return '<div class="card" style="margin-bottom:16px"><div class="card-head"><h2>' + esc(d.name) + '</h2></div>' +
+        standingsTableHTML(dRows, d.playoffCutoff) + '</div>';
+    }).join('');
+    var unassigned = rows.filter(function(r){ return !r.team.divisionId; });
+    var unassignedHTML = unassigned.length ?
+      '<div class="card" style="margin-bottom:16px"><div class="card-head"><h2>Unassigned</h2></div>' + standingsTableHTML(unassigned, null) + '</div>' : '';
+    body = groups + unassignedHTML;
+  } else {
+    body = '<div class="card">' + standingsTableHTML(rows, null) + '</div>';
+  }
+  return pageHead('Season Standings', season.name) + viewToggle + body +
     '<p class="subtle" style="margin-top:12px;font-size:12.5px">PTS% = points earned &divide; points possible. Click a team to open its page.</p>';
 }
 
@@ -569,10 +604,11 @@ function renderTeam(teamId){
   var resultsHTML = results.length ? '<div class="list">' + results.map(function(g){ return gameRowHTML(g); }).join('') + '</div>' : emptyState('No games played yet', '');
   var upcomingHTML = upcoming.length ? '<div class="list">' + upcoming.map(function(g){ return gameRowHTML(g); }).join('') + '</div>' : '';
 
+  var teamDivision = team.divisionId ? divisionById(team.divisionId) : null;
   return (
     '<div class="page-head">' +
       '<div style="display:flex;align-items:center;gap:14px">' + teamBadgeHTML(team,'lg') +
-        '<div><div class="eyebrow">Team</div><h1>' + esc(team.name) + '</h1></div></div>' +
+        '<div><div class="eyebrow">Team' + (teamDivision?' &middot; ' + esc(teamDivision.name):'') + '</div><h1>' + esc(team.name) + '</h1></div></div>' +
     '</div><div class="rule"></div>' +
     kpis +
     '<div class="grid-2">' +
@@ -841,10 +877,12 @@ function renderLogGame(){
 var mgTab = 'teams';
 var mgEditTeamId = null;
 var mgEditPlayerId = null;
+var mgEditDivisionId = null;
 var tradeDraft = { moves: [{playerId:'', toTeamId:''}] };
 
 function mgTeamsHTML(){
   var editing = mgEditTeamId ? teamById(mgEditTeamId) : null;
+  var divisions = sortedDivisions();
   var formHTML = '<form data-form="saveTeam" class="card card-pad stack" style="max-width:540px;margin-bottom:18px">' +
     '<div class="eyebrow">' + (editing?'Edit Team':'Add Team') + '</div>' +
     (editing?'<input type="hidden" name="id" value="' + editing.id + '">':'') +
@@ -856,12 +894,16 @@ function mgTeamsHTML(){
       '<div class="field"><label>Abbreviation</label><input type="text" name="abbr" maxlength="4" value="' + (editing?esc(editing.abbr||''):'') + '" placeholder="e.g. ICE"></div>' +
       '<div class="field"><label>Team color</label><input type="color" name="colorPrimary" value="' + (editing&&editing.colorPrimary?editing.colorPrimary:'#1D5D8C') + '"></div>' +
     '</div>' +
+    (divisions.length ? '<div class="field"><label>Division</label><select name="divisionId"><option value="">No division</option>' +
+      divisions.map(function(d){return '<option value="' + d.id + '" ' + (editing&&editing.divisionId===d.id?'selected':'') + '>' + esc(d.name) + '</option>';}).join('') +
+      '</select></div>' : '') +
     '<div class="form-actions"><button class="btn primary" type="submit">' + (editing?'Save changes':'Add team') + '</button>' + (editing?'<button type="button" class="btn" data-action="cancel-edit-team">Cancel</button>':'') + '</div>' +
   '</form>';
   var rows = STATE.teams.slice().sort(function(a,b){return a.name.localeCompare(b.name);}).map(function(t){
     var gpCount = STATE.games.filter(function(g){return g.homeTeamId===t.id||g.awayTeamId===t.id;}).length;
+    var div = t.divisionId ? divisionById(t.divisionId) : null;
     return '<div class="list-row">' +
-      '<div style="display:flex;align-items:center;gap:10px;flex:1">' + teamBadgeHTML(t) + '<span>' + esc(t.name) + (t.active===false?' <span class="chip general">Inactive</span>':'') + '</span></div>' +
+      '<div style="display:flex;align-items:center;gap:10px;flex:1">' + teamBadgeHTML(t) + '<span>' + esc(t.name) + (t.active===false?' <span class="chip general">Inactive</span>':'') + (div?' <span class="chip general">' + esc(div.name) + '</span>':'') + '</span></div>' +
       '<div class="form-actions">' +
         '<button class="btn sm" data-action="edit-team" data-id="' + t.id + '">Edit</button>' +
         (t.active===false ? '<button class="btn sm" data-action="reactivate-team" data-id="' + t.id + '">Reactivate</button>' : '<button class="btn sm" data-action="deactivate-team" data-id="' + t.id + '">Deactivate</button>') +
@@ -869,6 +911,31 @@ function mgTeamsHTML(){
       '</div></div>';
   }).join('');
   return formHTML + '<div class="card">' + (rows || emptyState('No teams yet', 'Add your first team above.')) + '</div>';
+}
+
+function mgDivisionsHTML(){
+  var editing = mgEditDivisionId ? divisionById(mgEditDivisionId) : null;
+  var formHTML = '<form data-form="saveDivision" class="card card-pad stack" style="max-width:460px;margin-bottom:18px">' +
+    '<div class="eyebrow">' + (editing?'Edit Division':'Add Division') + '</div>' +
+    (editing?'<input type="hidden" name="id" value="' + editing.id + '">':'') +
+    '<div class="field-row">' +
+      '<div class="field"><label>Division name</label><input type="text" name="name" required value="' + (editing?esc(editing.name):'') + '" placeholder="e.g. North"></div>' +
+      '<div class="field"><label>Playoff cutoff</label><input type="number" min="1" name="playoffCutoff" value="' + (editing&&editing.playoffCutoff!=null?editing.playoffCutoff:'') + '" placeholder="e.g. 4"></div>' +
+    '</div>' +
+    '<p class="subtle" style="font-size:12px;margin:0">Playoff cutoff is optional — leave blank for no cutoff line. When set, Standings draws a line after that rank when viewing this division.</p>' +
+    '<div class="form-actions"><button class="btn primary" type="submit">' + (editing?'Save changes':'Add division') + '</button>' + (editing?'<button type="button" class="btn" data-action="cancel-edit-division">Cancel</button>':'') + '</div>' +
+  '</form>';
+  var divisions = sortedDivisions();
+  var rows = divisions.map(function(d){
+    var teamCount = STATE.teams.filter(function(t){return t.divisionId===d.id;}).length;
+    return '<div class="list-row">' +
+      '<div style="flex:1">' + esc(d.name) + ' <span class="subtle">&middot; ' + teamCount + ' team' + (teamCount===1?'':'s') + (d.playoffCutoff!=null?' &middot; top ' + d.playoffCutoff + ' make playoffs':'') + '</span></div>' +
+      '<div class="form-actions">' +
+        '<button class="btn sm" data-action="edit-division" data-id="' + d.id + '">Edit</button>' +
+        '<button class="btn sm danger" data-action="delete-division" data-id="' + d.id + '">Delete</button>' +
+      '</div></div>';
+  }).join('');
+  return formHTML + '<div class="card">' + (rows || emptyState('No divisions yet', 'Add a division above, then assign teams to it from the Teams tab.')) + '</div>';
 }
 
 function mgPlayersHTML(){
@@ -966,12 +1033,13 @@ function mgSettingsHTML(){
 
 function renderManagement(){
   var head = pageHead('Admin', 'Management');
-  var labels = {teams:'Teams', players:'Players', trades:'Trades', settings:'League Settings'};
-  var tabs = '<div class="tabbar">' + ['teams','players','trades','settings'].map(function(t){
+  var labels = {teams:'Teams', divisions:'Divisions', players:'Players', trades:'Trades', settings:'League Settings'};
+  var tabs = '<div class="tabbar">' + ['teams','divisions','players','trades','settings'].map(function(t){
     return '<button class="tab-btn ' + (mgTab===t?'active':'') + '" data-mgtab="' + t + '">' + labels[t] + '</button>';
   }).join('') + '</div>';
   var body;
   if(mgTab==='teams') body = mgTeamsHTML();
+  else if(mgTab==='divisions') body = mgDivisionsHTML();
   else if(mgTab==='players') body = mgPlayersHTML();
   else if(mgTab==='trades') body = mgTradesHTML();
   else body = mgSettingsHTML();
@@ -1055,6 +1123,9 @@ function onClick(e) {
     else if (action === "deactivate-team") { withSave(function () { return DB.setTeamActive(id, false); }); }
     else if (action === "reactivate-team") { withSave(function () { return DB.setTeamActive(id, true); }); }
     else if (action === "delete-team") { if (confirm("Delete this team? This cannot be undone.")) withSave(function () { return DB.deleteTeam(id); }); }
+    else if (action === "edit-division") { mgEditDivisionId = id; paint(); }
+    else if (action === "cancel-edit-division") { mgEditDivisionId = null; paint(); }
+    else if (action === "delete-division") { if (confirm("Delete this division? Teams in it become unassigned.")) withSave(function () { return DB.deleteDivision(id); }); }
     else if (action === "edit-player") { mgEditPlayerId = id; paint(); }
     else if (action === "cancel-edit-player") { mgEditPlayerId = null; paint(); }
     else if (action === "deactivate-player") { withSave(function () { return DB.setPlayerActive(id, false); }); }
@@ -1073,8 +1144,10 @@ function onClick(e) {
   }
   var lgm = e.target.closest("[data-lgmode]");
   if (lgm) { lgDraft.mode = lgm.dataset.lgmode; paint(); return; }
+  var sv = e.target.closest("[data-standingsview]");
+  if (sv) { standingsView = sv.dataset.standingsview; paint(); return; }
   var mgt = e.target.closest("[data-mgtab]");
-  if (mgt) { mgTab = mgt.dataset.mgtab; mgEditTeamId = null; mgEditPlayerId = null; paint(); return; }
+  if (mgt) { mgTab = mgt.dataset.mgtab; mgEditTeamId = null; mgEditPlayerId = null; mgEditDivisionId = null; paint(); return; }
   var rt = e.target.closest(".tabbar [data-tab]");
   if (rt && document.getElementById("records-body")) {
     $all(".tabbar .tab-btn").forEach(function (b) { b.classList.remove("active"); });
@@ -1197,10 +1270,21 @@ async function onSubmit(e) {
       id: fd.get("id") || null, name: tname,
       shortName: ((fd.get("shortName") || "") + "").trim(),
       abbr: ((fd.get("abbr") || "") + "").trim().toUpperCase() || tname.slice(0, 3).toUpperCase(),
-      colorPrimary: fd.get("colorPrimary") || "#1D5D8C"
+      colorPrimary: fd.get("colorPrimary") || "#1D5D8C",
+      divisionId: fd.get("divisionId") || null
     };
     var ok = await withSave(function () { return DB.saveTeam(team); }, team.id ? "Team updated." : "Team added.");
     if (ok) mgEditTeamId = null;
+  } else if (kind === "saveDivision") {
+    var dname = ((fd.get("name") || "") + "").trim();
+    if (!dname) return;
+    var cutoffRaw = fd.get("playoffCutoff");
+    var division = {
+      id: fd.get("id") || null, name: dname,
+      playoffCutoff: (cutoffRaw !== null && cutoffRaw !== "") ? parseInt(cutoffRaw, 10) : null
+    };
+    var okd = await withSave(function () { return DB.saveDivision(division); }, division.id ? "Division updated." : "Division added.");
+    if (okd) mgEditDivisionId = null;
   } else if (kind === "savePlayer") {
     var pname = ((fd.get("name") || "") + "").trim();
     if (!pname) return;

@@ -76,6 +76,20 @@ js/app.js            Rendering, routing, forms, and all the app logic
 supabase/schema.sql   Reference copy of the database schema + security rules
 ```
 
+## Divisions and playoff cutoffs
+
+From Management → Divisions, an admin can create divisions (e.g. "North" /
+"South") and, optionally, give each one a playoff cutoff — the number of
+teams from that division that make the playoffs. Assign teams to a division
+from Management → Teams (a team can also have no division).
+
+On the Standings page, once at least one division exists, a **Full
+League / Divisional** toggle appears above the table. Divisional view shows
+one ranked table per division, each with a dashed gold line drawn after the
+cutoff rank (if that division has one set) marking who's in playoff
+position; teams with no division land in a final "Unassigned" table. Full
+League view is the original single combined table, unchanged.
+
 ## Notes
 
 - **Points system, team colors, and league name** are all editable from the

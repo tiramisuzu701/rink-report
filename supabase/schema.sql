@@ -6,8 +6,8 @@
 -- use the site — it's here for reference / version control, and as a
 -- starting point if you ever want to stand up your own separate project.
 --
--- Applied as two migrations: initial_league_schema, then
--- rls_and_admin_allowlist.
+-- Applied as three migrations: initial_league_schema, then
+-- rls_and_admin_allowlist, then add_divisions.
 
 -- ---------- Core tables ----------
 
@@ -22,6 +22,16 @@ create table public.seasons (
   created_at timestamptz not null default now()
 );
 
+-- Divisions group teams (e.g. "North" / "South") and optionally carry a
+-- playoff cutoff: the number of teams from that division that make the
+-- playoffs. Divisions persist across seasons, same as teams.
+create table public.divisions (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  playoff_cutoff integer, -- null = no cutoff line shown for this division
+  created_at timestamptz not null default now()
+);
+
 create table public.teams (
   id uuid primary key default gen_random_uuid(),
   name text not null,
@@ -29,6 +39,7 @@ create table public.teams (
   abbr text,
   color_primary text default '#1D5D8C',
   active boolean not null default true,
+  division_id uuid references public.divisions(id) on delete set null,
   created_at timestamptz not null default now()
 );
 
@@ -164,3 +175,14 @@ begin
     execute format('create policy "%I admin delete" on public.%I for delete using (is_admin())', t, t);
   end loop;
 end $$;
+
+-- ---------- add_divisions migration (applied after the above) ----------
+-- (divisions and teams.division_id are created earlier in this file so the
+-- table order reads top-to-bottom; RLS for divisions follows the same
+-- public-read / admin-write pattern as every other table.)
+
+alter table public.divisions enable row level security;
+create policy "divisions public read" on public.divisions for select using (true);
+create policy "divisions admin write" on public.divisions for insert with check (is_admin());
+create policy "divisions admin update" on public.divisions for update using (is_admin()) with check (is_admin());
+create policy "divisions admin delete" on public.divisions for delete using (is_admin());

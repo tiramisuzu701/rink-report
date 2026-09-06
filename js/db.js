@@ -18,7 +18,10 @@
   }
   function mapTeam(r) {
     return { id: r.id, name: r.name, shortName: r.short_name, abbr: r.abbr,
-      colorPrimary: r.color_primary, active: r.active, createdAt: r.created_at };
+      colorPrimary: r.color_primary, active: r.active, divisionId: r.division_id, createdAt: r.created_at };
+  }
+  function mapDivision(r) {
+    return { id: r.id, name: r.name, playoffCutoff: r.playoff_cutoff, createdAt: r.created_at };
   }
   function mapPlayer(r) {
     return { id: r.id, teamId: r.team_id, name: r.name, position: r.position,
@@ -62,7 +65,8 @@
       sb.from("news").select("*").order("date", { ascending: false }),
       sb.from("playoff_brackets").select("*"),
       sb.from("playoff_series").select("*"),
-      sb.from("settings").select("*").eq("id", true).maybeSingle()
+      sb.from("settings").select("*").eq("id", true).maybeSingle(),
+      sb.from("divisions").select("*").order("name")
     ]);
     results.forEach(check);
     var brackets = (results[6].data || []).map(mapBracket);
@@ -79,19 +83,28 @@
       games: (results[3].data || []).map(mapGame),
       gamePlayerStats: (results[4].data || []).map(mapStat),
       news: (results[5].data || []).map(mapNews),
-      playoffs: brackets
+      playoffs: brackets,
+      divisions: (results[9].data || []).map(mapDivision)
     };
   }
 
   /* ---------- writes (all gated server-side by RLS + admin_emails) ---------- */
   var DB = {
     async saveTeam(t) {
-      var row = { name: t.name, short_name: t.shortName || null, abbr: t.abbr || null, color_primary: t.colorPrimary || "#1D5D8C" };
+      var row = { name: t.name, short_name: t.shortName || null, abbr: t.abbr || null,
+        color_primary: t.colorPrimary || "#1D5D8C", division_id: t.divisionId || null };
       if (t.id) check(await sb.from("teams").update(row).eq("id", t.id));
       else check(await sb.from("teams").insert(row));
     },
     async setTeamActive(id, active) { check(await sb.from("teams").update({ active: active }).eq("id", id)); },
     async deleteTeam(id) { check(await sb.from("teams").delete().eq("id", id)); },
+
+    async saveDivision(d) {
+      var row = { name: d.name, playoff_cutoff: (d.playoffCutoff === "" || d.playoffCutoff == null) ? null : d.playoffCutoff };
+      if (d.id) check(await sb.from("divisions").update(row).eq("id", d.id));
+      else check(await sb.from("divisions").insert(row));
+    },
+    async deleteDivision(id) { check(await sb.from("divisions").delete().eq("id", id)); },
 
     async savePlayer(p) {
       var row = { team_id: p.teamId, name: p.name, position: p.position, jersey: p.jersey };
